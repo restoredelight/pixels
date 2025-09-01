@@ -183,44 +183,50 @@ impl ScalingRenderer {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: std::slice::from_ref(&vertex_buffer_layout),
+                compilation_options: Default::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: render_texture_format,
                     blend: Some(blend_state),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             multiview: None,
+            cache: None,
         });
         let render_pipeline_fill = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("pixels_scaling_renderer_pipeline_fill"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &module_fill,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[vertex_buffer_layout],
+                compilation_options: Default::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module_fill,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: render_texture_format,
                     blend: Some(blend_state),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             multiview: None,
+            cache: None,
         });
 
         // Create clipping rectangle

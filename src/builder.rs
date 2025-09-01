@@ -50,7 +50,7 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
         Self {
             request_adapter_options: None,
             device_descriptor: None,
-            backend: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
+            backend: wgpu::Backends::all(),
             width,
             height,
             _pixel_aspect_ratio: 1.0,
@@ -245,26 +245,28 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
     /// # Errors
     ///
     /// Returns an error when a [`wgpu::Adapter`] cannot be found.
-    async fn build_impl(self) -> Result<Pixels<'win>, Error> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: self.backend,
-            ..Default::default()
-        });
+    async fn build_impl(self, instance: Option<&wgpu::Instance>) -> Result<Pixels<'win>, Error> {
+        let instance = match instance {
+            Some(instance) => instance,
+            None => &wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends: self.backend,
+                ..Default::default()
+            })
+        };
 
         // TODO: Use `options.pixel_aspect_ratio` to stretch the scaled texture
         let surface = instance.create_surface(self.surface_texture.window)?;
         let compatible_surface = Some(&surface);
         let request_adapter_options = &self.request_adapter_options;
         let adapter = match wgpu::util::initialize_adapter_from_env(&instance, compatible_surface) {
-            Some(adapter) => Some(adapter),
-            None => {
+            Ok(adapter) => Some(adapter),
+            Err(_) => {
                 instance
                     .request_adapter(&request_adapter_options.as_ref().map_or_else(
                         || wgpu::RequestAdapterOptions {
                             compatible_surface,
                             force_fallback_adapter: false,
-                            power_preference:
-                                wgpu::util::power_preference_from_env().unwrap_or_default(),
+                            power_preference: wgpu::PowerPreference::default(),
                         },
                         |rao| wgpu::RequestAdapterOptions {
                             compatible_surface: rao.compatible_surface.or(compatible_surface),
@@ -273,6 +275,7 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
                         },
                     ))
                     .await
+                    .ok()
             }
         };
 
@@ -285,7 +288,7 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
                 ..wgpu::DeviceDescriptor::default()
             });
 
-        let (device, queue) = adapter.request_device(&device_descriptor, None).await?;
+        let (device, queue) = adapter.request_device(&device_descriptor).await?;
 
         let surface_capabilities = surface.get_capabilities(&adapter);
         let present_mode = if surface_capabilities
@@ -372,7 +375,11 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
     /// Returns an error when a [`wgpu::Adapter`] or [`wgpu::Device`] cannot be found.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn build(self) -> Result<Pixels<'win>, Error> {
-        pollster::block_on(self.build_impl())
+        pollster::block_on(self.build_impl(None))
+    }
+
+    pub fn build_with_instance(self, instance: &wgpu::Instance) -> Result<Pixels<'win>, Error> {
+        pollster::block_on(self.build_impl(Some(instance)))
     }
 
     /// Create a pixel buffer from the options builder without blocking the current thread.
@@ -398,7 +405,7 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
     ///
     /// Returns an error when a [`wgpu::Adapter`] or [`wgpu::Device`] cannot be found.
     pub async fn build_async(self) -> Result<Pixels<'win>, Error> {
-        self.build_impl().await
+        self.build_impl(None).await
     }
 }
 
@@ -551,7 +558,7 @@ const fn texture_format_size(texture_format: wgpu::TextureFormat) -> f32 {
         | Bgra8UnormSrgb
         | Rgb10a2Uint
         | Rgb10a2Unorm
-        | Rg11b10Float
+        | Rg11b10Ufloat
         | Depth32Float
         | Depth24Plus
         | Depth24PlusStencil8 => 4.0, // 32.0 / 8.0
@@ -565,6 +572,7 @@ const fn texture_format_size(texture_format: wgpu::TextureFormat) -> f32 {
         | Rgba16Float
         | Rgba16Unorm
         | Rgba16Snorm
+        | R64Uint
         | Depth32FloatStencil8 => 8.0, // 64.0 / 8.0
 
         // 128-bit formats, 8 bits per component
