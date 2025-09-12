@@ -72,10 +72,10 @@ pub enum ScalingMode {
 #[derive(Debug)]
 pub struct PixelsContext<'win> {
     /// The `Device` allows creating GPU resources.
-    pub device: wgpu::Device,
+    pub device: std::sync::Arc<wgpu::Device>,
 
     /// The `Queue` provides access to the GPU command queue.
-    pub queue: wgpu::Queue,
+    pub queue: std::sync::Arc<wgpu::Queue>,
 
     surface: wgpu::Surface<'win>,
 
@@ -113,7 +113,7 @@ pub struct Pixels<'win> {
     surface_texture_format: wgpu::TextureFormat,
     blend_state: wgpu::BlendState,
     alpha_mode: wgpu::CompositeAlphaMode,
-    adapter: wgpu::Adapter,
+    adapter: std::sync::Arc<wgpu::Adapter>,
 
     // Pixel buffer
     pixels: Vec<u8>,
@@ -145,6 +145,9 @@ pub enum Error {
     /// User-defined error from custom render function
     #[error("User-defined error.")]
     UserDefined(#[from] DynError),
+    /// Panic
+    #[error("wgpu panicked")]
+    Panic
 }
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;

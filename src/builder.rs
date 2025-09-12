@@ -245,23 +245,34 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
     /// # Errors
     ///
     /// Returns an error when a [`wgpu::Adapter`] cannot be found.
-    async fn build_impl(self, instance: Option<&wgpu::Instance>) -> Result<Pixels<'win>, Error> {
+    async fn build_impl(
+        self,
+        x: Option<(&wgpu::Instance, &wgpu::Adapter, &wgpu::Device, &wgpu::Queue)>,
+    ) -> Result<Pixels<'win>, Error> {
+        let (instance, adapter, device, queue) = match x {
+            Some((instance, adapter, device, queue)) => {
+                (Some(instance), Some(adapter), Some(device), Some(queue))
+            }
+            None => (None, None, None, None),
+        };
+
         let instance = match instance {
             Some(instance) => instance,
             None => &wgpu::Instance::new(&wgpu::InstanceDescriptor {
                 backends: self.backend,
                 ..Default::default()
-            })
+            }),
         };
 
         // TODO: Use `options.pixel_aspect_ratio` to stretch the scaled texture
         let surface = instance.create_surface(self.surface_texture.window)?;
         let compatible_surface = Some(&surface);
         let request_adapter_options = &self.request_adapter_options;
-        let adapter = match wgpu::util::initialize_adapter_from_env(&instance, compatible_surface) {
-            Ok(adapter) => Some(adapter),
-            Err(_) => {
-                instance
+        let adapter = match adapter {
+            Some(adapter) => Some(adapter.clone()),
+            None => match wgpu::util::initialize_adapter_from_env(instance, compatible_surface) {
+                Ok(adapter) => Some(adapter),
+                Err(_) => instance
                     .request_adapter(&request_adapter_options.as_ref().map_or_else(
                         || wgpu::RequestAdapterOptions {
                             compatible_surface,
@@ -275,20 +286,27 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
                         },
                     ))
                     .await
-                    .ok()
+                    .ok(),
             }
         };
 
         let adapter = adapter.ok_or(Error::AdapterNotFound)?;
 
-        let device_descriptor = self
-            .device_descriptor
-            .unwrap_or_else(|| wgpu::DeviceDescriptor {
-                required_limits: adapter.limits(),
-                ..wgpu::DeviceDescriptor::default()
-            });
+        let (device, queue) = match (device, queue) {
+            (Some(device), Some(queue)) => (device.clone(), queue.clone()),
+            _ => {
+                let device_descriptor =
+                    self.device_descriptor
+                        .unwrap_or_else(|| wgpu::DeviceDescriptor {
+                            required_limits: adapter.limits(),
+                            ..wgpu::DeviceDescriptor::default()
+                        });
 
-        let (device, queue) = adapter.request_device(&device_descriptor).await?;
+                let (device, queue) = adapter.request_device(&device_descriptor).await?;
+
+                (device, queue)
+            }
+        };
 
         let surface_capabilities = surface.get_capabilities(&adapter);
         let present_mode = if surface_capabilities
@@ -337,8 +355,8 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
 
         // Instantiate the Pixels struct
         let context = PixelsContext {
-            device,
-            queue,
+            device: std::sync::Arc::new(device),
+            queue: std::sync::Arc::new(queue),
             surface,
             texture,
             texture_extent,
@@ -350,7 +368,7 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
 
         let pixels = Pixels {
             context,
-            adapter,
+            adapter: std::sync::Arc::new(adapter),
             surface_size,
             present_mode,
             render_texture_format,
@@ -378,8 +396,14 @@ impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, '
         pollster::block_on(self.build_impl(None))
     }
 
-    pub fn build_with_instance(self, instance: &wgpu::Instance) -> Result<Pixels<'win>, Error> {
-        pollster::block_on(self.build_impl(Some(instance)))
+    pub fn build_with_instance(
+        self,
+        instance: &wgpu::Instance,
+        adapter: &wgpu::Adapter,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue
+    ) -> Result<Pixels<'win>, Error> {
+        pollster::block_on(self.build_impl(Some((instance, adapter, device, queue))))
     }
 
     /// Create a pixel buffer from the options builder without blocking the current thread.
