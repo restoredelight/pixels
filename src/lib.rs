@@ -73,10 +73,10 @@ pub enum ScalingMode {
 #[derive(Debug)]
 pub struct PixelsContext<'win> {
     /// The `Device` allows creating GPU resources.
-    pub device: wgpu::Device,
+    pub device: std::sync::Arc<wgpu::Device>,
 
     /// The `Queue` provides access to the GPU command queue.
-    pub queue: wgpu::Queue,
+    pub queue: std::sync::Arc<wgpu::Queue>,
 
     surface: wgpu::Surface<'win>,
 
